@@ -176,3 +176,194 @@ await snapshotTest({
     }
   },
 })
+
+// Test creating an issue with blocking relationships
+await snapshotTest({
+  name: "Issue Create Command - With Blocking Relationships",
+  meta: import.meta,
+  colors: false,
+  args: [
+    "--title",
+    "Implement authentication refactor",
+    "--description",
+    "Refactor authentication module for better security",
+    "--team",
+    "ENG",
+    "--blocking",
+    "ENG-100",
+    "101", // numeric ID should use team key
+    "--blocked-by",
+    "ENG-99",
+    "--no-interactive",
+    "--no-color",
+  ],
+  denoArgs: commonDenoArgs,
+  async fn() {
+    const { cleanup } = await setupMockLinearServer([
+      // Mock response for getTeamIdByKey() - converting team key to ID
+      {
+        queryName: "GetTeamIdByKey",
+        variables: { team: "ENG" },
+        response: {
+          data: {
+            teams: {
+              nodes: [{ id: "team-eng-id" }],
+            },
+          },
+        },
+      },
+      // Mock response for getting team key (for title conversion)
+      {
+        queryName: "GetTeamKeys",
+        response: {
+          data: {
+            teams: {
+              nodes: [{
+                id: "team-eng-id",
+                key: "ENG",
+              }],
+            },
+          },
+        },
+      },
+      // Mock response for the create issue mutation
+      {
+        queryName: "CreateIssue",
+        response: {
+          data: {
+            issueCreate: {
+              success: true,
+              issue: {
+                id: "issue-new-200",
+                identifier: "ENG-200",
+                url:
+                  "https://linear.app/test-team/issue/ENG-200/implement-authentication-refactor",
+                title: "Implement authentication refactor",
+                team: {
+                  key: "ENG",
+                },
+              },
+            },
+          },
+        },
+      },
+      // Mock for getting issue ID of ENG-200 (self)
+      {
+        queryName: "GetIssueId",
+        variables: { id: "ENG-200" },
+        response: {
+          data: {
+            issue: {
+              id: "issue-new-200",
+            },
+          },
+        },
+      },
+      // Mock for getting issue ID of ENG-100 (blocking)
+      {
+        queryName: "GetIssueId",
+        variables: { id: "ENG-100" },
+        response: {
+          data: {
+            issue: {
+              id: "issue-blocking-100",
+            },
+          },
+        },
+      },
+      // Mock for getting issue ID of ENG-101 (numeric with team)
+      {
+        queryName: "GetIssueId",
+        variables: { id: "ENG-101" },
+        response: {
+          data: {
+            issue: {
+              id: "issue-blocking-101",
+            },
+          },
+        },
+      },
+      // Mock for getting issue ID of ENG-99 (blocked-by)
+      {
+        queryName: "GetIssueId",
+        variables: { id: "ENG-99" },
+        response: {
+          data: {
+            issue: {
+              id: "issue-blockedby-99",
+            },
+          },
+        },
+      },
+      // Mock for creating blocking relation to ENG-100
+      {
+        queryName: "CreateIssueRelation",
+        variables: {
+          input: {
+            type: "blocks",
+            issueId: "issue-new-200",
+            relatedIssueId: "issue-blocking-100",
+          },
+        },
+        response: {
+          data: {
+            issueRelationCreate: {
+              success: true,
+              issueRelation: {
+                id: "relation-1",
+              },
+            },
+          },
+        },
+      },
+      // Mock for creating blocking relation to ENG-101
+      {
+        queryName: "CreateIssueRelation",
+        variables: {
+          input: {
+            type: "blocks",
+            issueId: "issue-new-200",
+            relatedIssueId: "issue-blocking-101",
+          },
+        },
+        response: {
+          data: {
+            issueRelationCreate: {
+              success: true,
+              issueRelation: {
+                id: "relation-2",
+              },
+            },
+          },
+        },
+      },
+      // Mock for creating blocked-by relation from ENG-99
+      {
+        queryName: "CreateIssueRelation",
+        variables: {
+          input: {
+            type: "blocks",
+            issueId: "issue-blockedby-99",
+            relatedIssueId: "issue-new-200",
+          },
+        },
+        response: {
+          data: {
+            issueRelationCreate: {
+              success: true,
+              issueRelation: {
+                id: "relation-3",
+              },
+            },
+          },
+        },
+      },
+    ], { LINEAR_TEAM_ID: "ENG" })
+
+    try {
+      await createCommand.parse()
+    } finally {
+      await cleanup()
+    }
+  },
+})

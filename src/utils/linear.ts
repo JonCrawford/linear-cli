@@ -31,9 +31,12 @@ export function getTeamKey(): string | undefined {
  * based on loose inputs, returns a linear issue identifier like ABC-123
  *
  * formats the provided identifier, adds the team id prefix, or finds one from the branch name
+ * @param providedId - The issue identifier or number
+ * @param defaultTeamKey - Optional default team key to use for numeric-only IDs
  */
 export async function getIssueIdentifier(
   providedId?: string,
+  defaultTeamKey?: string,
 ): Promise<string | undefined> {
   if (providedId && isValidLinearIdentifier(providedId)) {
     return formatIssueIdentifier(providedId)
@@ -41,7 +44,7 @@ export async function getIssueIdentifier(
 
   // Handle integer-only IDs by prepending team prefix
   if (providedId && /^[1-9][0-9]*$/.test(providedId)) {
-    const teamId = getTeamKey()
+    const teamId = defaultTeamKey || getTeamKey()
     if (teamId) {
       const fullId = `${teamId}-${providedId}`
       if (isValidLinearIdentifier(fullId)) {
@@ -756,4 +759,214 @@ export async function selectOption(
     })
     return result === NO ? undefined : result
   }
+}
+
+interface IssueRelationsResult {
+  created: number
+  failed: number
+  skipped: number
+  messages: string[]
+}
+
+/**
+ * Creates issue relations (blocking/blocked-by) for a given issue
+ * Handles deduplication, self-relation checks, and success verification
+ */
+export async function createIssueRelations({
+  sourceIssueId,
+  sourceIdentifier,
+  blocking = [],
+  blockedBy = [],
+  defaultTeamKey,
+}: {
+  sourceIssueId: string
+  sourceIdentifier: string
+  blocking?: string[]
+  blockedBy?: string[]
+  defaultTeamKey?: string
+}): Promise<IssueRelationsResult> {
+  const result: IssueRelationsResult = {
+    created: 0,
+    failed: 0,
+    skipped: 0,
+    messages: [],
+  }
+
+  if (blocking.length === 0 && blockedBy.length === 0) {
+    return result
+  }
+
+  const client = getGraphQLClient()
+  const createRelationMutation = gql(/* GraphQL */ `
+    mutation CreateIssueRelation($input: IssueRelationCreateInput!) {
+      issueRelationCreate(input: $input) {
+        success
+        issueRelation {
+          id
+        }
+      }
+    }
+  `)
+
+  // Process blocking relations (this issue blocks others)
+  const blockingSet = new Set(
+    blocking
+      .filter((id) => typeof id === "string" && id.trim())
+      .map((id) => id.trim().toUpperCase()),
+  )
+
+  for (const blockedIssue of blockingSet) {
+    const blockedIdentifier = await getIssueIdentifier(
+      blockedIssue,
+      defaultTeamKey,
+    )
+    if (!blockedIdentifier) {
+      result.messages.push(
+        `✗ Could not resolve issue identifier: ${blockedIssue}`,
+      )
+      result.failed++
+      continue
+    }
+
+    // Check for self-relation
+    if (blockedIdentifier === sourceIdentifier) {
+      result.messages.push(
+        `✗ Skipped self-relation: issue cannot block itself`,
+      )
+      result.skipped++
+      continue
+    }
+
+    const blockedId = await getIssueId(blockedIdentifier)
+    if (!blockedId) {
+      result.messages.push(
+        `✗ Could not resolve issue ID: ${blockedIdentifier}`,
+      )
+      result.failed++
+      continue
+    }
+
+    try {
+      const response = await client.request(createRelationMutation, {
+        input: {
+          issueId: sourceIssueId,
+          relatedIssueId: blockedId,
+          type: "blocks",
+        },
+      })
+
+      if (response.issueRelationCreate.success) {
+        result.messages.push(
+          `✓ Created blocking relation: ${sourceIdentifier} blocks ${blockedIdentifier}`,
+        )
+        result.created++
+      } else {
+        result.messages.push(
+          `✗ Failed to create blocking relation with ${blockedIdentifier}`,
+        )
+        result.failed++
+      }
+    } catch (error) {
+      // Check if it's a duplicate relation error
+      // Linear API typically returns errors containing "already exists" for duplicates
+      const errorMessage = error?.toString()?.toLowerCase() || ""
+      const isDuplicate = errorMessage.includes("already exists") ||
+        errorMessage.includes("duplicate") ||
+        errorMessage.includes("relation exists")
+
+      if (isDuplicate) {
+        result.messages.push(
+          `✗ Skipped: relation already exists between ${sourceIdentifier} and ${blockedIdentifier}`,
+        )
+        result.skipped++
+      } else {
+        result.messages.push(
+          `✗ Failed to create blocking relation with ${blockedIdentifier}`,
+        )
+        result.failed++
+      }
+    }
+  }
+
+  // Process blocked-by relations (this issue is blocked by others)
+  const blockedBySet = new Set(
+    blockedBy
+      .filter((id) => typeof id === "string" && id.trim())
+      .map((id) => id.trim().toUpperCase()),
+  )
+
+  for (const blockingIssue of blockedBySet) {
+    const blockingIdentifier = await getIssueIdentifier(
+      blockingIssue,
+      defaultTeamKey,
+    )
+    if (!blockingIdentifier) {
+      result.messages.push(
+        `✗ Could not resolve issue identifier: ${blockingIssue}`,
+      )
+      result.failed++
+      continue
+    }
+
+    // Check for self-relation
+    if (blockingIdentifier === sourceIdentifier) {
+      result.messages.push(
+        `✗ Skipped self-relation: issue cannot be blocked by itself`,
+      )
+      result.skipped++
+      continue
+    }
+
+    const blockingId = await getIssueId(blockingIdentifier)
+    if (!blockingId) {
+      result.messages.push(
+        `✗ Could not resolve issue ID: ${blockingIdentifier}`,
+      )
+      result.failed++
+      continue
+    }
+
+    try {
+      const response = await client.request(createRelationMutation, {
+        input: {
+          issueId: blockingId,
+          relatedIssueId: sourceIssueId,
+          type: "blocks",
+        },
+      })
+
+      if (response.issueRelationCreate.success) {
+        result.messages.push(
+          `✓ Created blocked-by relation: ${sourceIdentifier} is blocked by ${blockingIdentifier}`,
+        )
+        result.created++
+      } else {
+        result.messages.push(
+          `✗ Failed to create blocked-by relation with ${blockingIdentifier}`,
+        )
+        result.failed++
+      }
+    } catch (error) {
+      // Check if it's a duplicate relation error
+      // Linear API typically returns errors containing "already exists" for duplicates
+      const errorMessage = error?.toString()?.toLowerCase() || ""
+      const isDuplicate = errorMessage.includes("already exists") ||
+        errorMessage.includes("duplicate") ||
+        errorMessage.includes("relation exists")
+
+      if (isDuplicate) {
+        result.messages.push(
+          `✗ Skipped: relation already exists between ${blockingIdentifier} and ${sourceIdentifier}`,
+        )
+        result.skipped++
+      } else {
+        result.messages.push(
+          `✗ Failed to create blocked-by relation with ${blockingIdentifier}`,
+        )
+        result.failed++
+      }
+    }
+  }
+
+  return result
 }

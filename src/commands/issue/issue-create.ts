@@ -5,6 +5,7 @@ import { getGraphQLClient } from "../../utils/graphql.ts"
 import { getEditor, openEditor } from "../../utils/editor.ts"
 import { getPriorityDisplay } from "../../utils/display.ts"
 import {
+  createIssueRelations,
   fetchParentIssueData,
   getAllTeams,
   getIssueId,
@@ -496,6 +497,14 @@ export const createCommand = new Command()
     "Workflow state for the issue (by name or type)",
   )
   .option(
+    "--blocking [blocking...:string]",
+    "Issue(s) that this issue blocks (e.g., ENG-123 or just 123 for current team). May be repeated.",
+  )
+  .option(
+    "--blocked-by [blockedBy...:string]",
+    "Issue(s) that block this issue (e.g., ENG-123 or just 123 for current team). May be repeated.",
+  )
+  .option(
     "--no-use-default-template",
     "Do not use default template for the issue",
   )
@@ -517,6 +526,8 @@ export const createCommand = new Command()
         team,
         project,
         state,
+        blocking,
+        blockedBy,
         color,
         interactive,
         title,
@@ -795,7 +806,43 @@ export const createCommand = new Command()
           throw "Issue creation failed - no issue returned"
         }
         const issueId = issue.id
-        spinner?.stop()
+
+        // Create blocking/blocked-by relations if specified
+        if (
+          (blocking && blocking !== true && blocking.length > 0) ||
+          (blockedBy && blockedBy !== true && blockedBy.length > 0)
+        ) {
+          spinner?.stop()
+          console.log("Creating issue relations...")
+          spinner?.start()
+
+          const relationsResult = await createIssueRelations({
+            sourceIssueId: issueId,
+            sourceIdentifier: issue.identifier,
+            blocking: blocking && blocking !== true ? blocking : [],
+            blockedBy: blockedBy && blockedBy !== true ? blockedBy : [],
+            defaultTeamKey: issue.team.key,
+          })
+
+          spinner?.stop()
+
+          // Print all messages from the relation creation
+          for (const message of relationsResult.messages) {
+            console.log(message)
+          }
+
+          // Print summary if there were any relations processed
+          const total = relationsResult.created + relationsResult.failed +
+            relationsResult.skipped
+          if (total > 0) {
+            console.log(
+              `Relations summary: ${relationsResult.created} created, ${relationsResult.failed} failed, ${relationsResult.skipped} skipped`,
+            )
+          }
+        } else {
+          spinner?.stop()
+        }
+
         console.log(issue.url)
 
         if (start) {

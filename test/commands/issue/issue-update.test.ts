@@ -163,3 +163,170 @@ await snapshotTest({
     }
   },
 })
+
+// Test updating an issue with blocking relationships
+await snapshotTest({
+  name: "Issue Update Command - With Blocking Relationships",
+  meta: import.meta,
+  colors: false,
+  args: [
+    "ENG-123",
+    "--blocking",
+    "ENG-124",
+    "125", // numeric ID should use team key
+    "--blocked-by",
+    "ENG-126",
+    "--no-color",
+  ],
+  denoArgs: commonDenoArgs,
+  async fn() {
+    const { cleanup } = await setupMockLinearServer([
+      // Mock response for getTeamIdByKey() - converting team key to ID
+      {
+        queryName: "GetTeamIdByKey",
+        variables: { team: "ENG" },
+        response: {
+          data: {
+            teams: {
+              nodes: [{ id: "team-eng-id" }],
+            },
+          },
+        },
+      },
+      // Mock response for the update issue mutation
+      {
+        queryName: "UpdateIssue",
+        response: {
+          data: {
+            issueUpdate: {
+              success: true,
+              issue: {
+                id: "issue-existing-123",
+                identifier: "ENG-123",
+                url: "https://linear.app/test-team/issue/ENG-123/test-issue",
+                title: "Test Issue",
+              },
+            },
+          },
+        },
+      },
+      // Mock for getting issue ID of ENG-123 (self)
+      {
+        queryName: "GetIssueId",
+        variables: { id: "ENG-123" },
+        response: {
+          data: {
+            issue: {
+              id: "issue-existing-123",
+            },
+          },
+        },
+      },
+      // Mock for getting issue ID of ENG-124 (blocking)
+      {
+        queryName: "GetIssueId",
+        variables: { id: "ENG-124" },
+        response: {
+          data: {
+            issue: {
+              id: "issue-blocking-124",
+            },
+          },
+        },
+      },
+      // Mock for getting issue ID of ENG-125 (numeric with team)
+      {
+        queryName: "GetIssueId",
+        variables: { id: "ENG-125" },
+        response: {
+          data: {
+            issue: {
+              id: "issue-blocking-125",
+            },
+          },
+        },
+      },
+      // Mock for getting issue ID of ENG-126 (blocked-by)
+      {
+        queryName: "GetIssueId",
+        variables: { id: "ENG-126" },
+        response: {
+          data: {
+            issue: {
+              id: "issue-blockedby-126",
+            },
+          },
+        },
+      },
+      // Mock for creating blocking relation to ENG-124
+      {
+        queryName: "CreateIssueRelation",
+        variables: {
+          input: {
+            type: "blocks",
+            issueId: "issue-existing-123",
+            relatedIssueId: "issue-blocking-124",
+          },
+        },
+        response: {
+          data: {
+            issueRelationCreate: {
+              success: true,
+              issueRelation: {
+                id: "relation-1",
+              },
+            },
+          },
+        },
+      },
+      // Mock for creating blocking relation to ENG-125
+      {
+        queryName: "CreateIssueRelation",
+        variables: {
+          input: {
+            type: "blocks",
+            issueId: "issue-existing-123",
+            relatedIssueId: "issue-blocking-125",
+          },
+        },
+        response: {
+          data: {
+            issueRelationCreate: {
+              success: true,
+              issueRelation: {
+                id: "relation-2",
+              },
+            },
+          },
+        },
+      },
+      // Mock for creating blocked-by relation from ENG-126
+      {
+        queryName: "CreateIssueRelation",
+        variables: {
+          input: {
+            type: "blocks",
+            issueId: "issue-blockedby-126",
+            relatedIssueId: "issue-existing-123",
+          },
+        },
+        response: {
+          data: {
+            issueRelationCreate: {
+              success: true,
+              issueRelation: {
+                id: "relation-3",
+              },
+            },
+          },
+        },
+      },
+    ], { LINEAR_TEAM_ID: "ENG" })
+
+    try {
+      await updateCommand.parse()
+    } finally {
+      await cleanup()
+    }
+  },
+})

@@ -2,6 +2,7 @@ import { Command } from "@cliffy/command"
 import { gql } from "../../__codegen__/gql.ts"
 import { getGraphQLClient } from "../../utils/graphql.ts"
 import {
+  createIssueRelations,
   getIssueId,
   getIssueIdentifier,
   getIssueLabelIdByNameForTeam,
@@ -55,6 +56,14 @@ export const updateCommand = new Command()
     "-s, --state <state:string>",
     "Workflow state for the issue (by name or type)",
   )
+  .option(
+    "--blocking [blocking...:string]",
+    "Issue(s) that this issue blocks (e.g., ENG-123 or just 123 for current team). May be repeated.",
+  )
+  .option(
+    "--blocked-by [blockedBy...:string]",
+    "Issue(s) that block this issue (e.g., ENG-123 or just 123 for current team). May be repeated.",
+  )
   .option("--no-color", "Disable colored output")
   .option("-t, --title <title:string>", "Title of the issue")
   .action(
@@ -70,14 +79,20 @@ export const updateCommand = new Command()
         team,
         project,
         state,
+        blocking,
+        blockedBy,
         color,
         title,
       },
       issueIdArg,
     ) => {
       try {
+        // Extract team from the --team option first, or from issue ID if available
+        let teamKey = team
+
         // Get the issue ID - either from argument or infer from current context
-        const issueId = await getIssueIdentifier(issueIdArg)
+        // Pass the team key if we have it to support numeric-only IDs
+        const issueId = await getIssueIdentifier(issueIdArg, teamKey)
         if (!issueId) {
           console.error(
             "Could not determine issue ID. Please provide an issue ID like 'ENG-123' or run from a branch with an issue ID.",
@@ -90,8 +105,7 @@ export const updateCommand = new Command()
         const spinner = showSpinner ? new Spinner() : null
         spinner?.start()
 
-        // Extract team from issue ID if not provided
-        let teamKey = team
+        // Extract team from issue ID if not provided via --team
         if (!teamKey) {
           const match = issueId.match(/^([A-Z]+)-/)
           teamKey = match?.[1]
@@ -217,7 +231,42 @@ export const updateCommand = new Command()
           throw "Issue update failed - no issue returned"
         }
 
-        spinner?.stop()
+        // Create blocking/blocked-by relations if specified
+        if (
+          (blocking && blocking !== true && blocking.length > 0) ||
+          (blockedBy && blockedBy !== true && blockedBy.length > 0)
+        ) {
+          spinner?.stop()
+          console.log("Creating issue relations...")
+          spinner?.start()
+
+          const relationsResult = await createIssueRelations({
+            sourceIssueId: issue.id,
+            sourceIdentifier: issue.identifier,
+            blocking: blocking && blocking !== true ? blocking : [],
+            blockedBy: blockedBy && blockedBy !== true ? blockedBy : [],
+            defaultTeamKey: teamKey, // Use the team key we already derived
+          })
+
+          spinner?.stop()
+
+          // Print all messages from the relation creation
+          for (const message of relationsResult.messages) {
+            console.log(message)
+          }
+
+          // Print summary if there were any relations processed
+          const total = relationsResult.created + relationsResult.failed +
+            relationsResult.skipped
+          if (total > 0) {
+            console.log(
+              `Relations summary: ${relationsResult.created} created, ${relationsResult.failed} failed, ${relationsResult.skipped} skipped`,
+            )
+          }
+        } else {
+          spinner?.stop()
+        }
+
         console.log(`✓ Updated issue ${issue.identifier}: ${issue.title}`)
         console.log(issue.url)
       } catch (error) {

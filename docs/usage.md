@@ -141,6 +141,11 @@ linear issue create --label bug --label frontend
 # Create for specific team
 linear issue create --team TEAM
 
+# Create with blocking relationships
+linear issue create --blocking TEAM-456  # This issue will block TEAM-456
+linear issue create --blocked-by TEAM-123  # This issue is blocked by TEAM-123
+linear issue create --blocking TEAM-456 TEAM-457  # Block multiple issues
+
 # Create and start working on it
 linear issue create --start
 ```
@@ -157,6 +162,11 @@ update a specific issue:
 
 ```bash
 linear issue update TEAM-123
+
+# Update with blocking relationships
+linear issue update TEAM-123 --blocking TEAM-456  # TEAM-123 will block TEAM-456
+linear issue update TEAM-123 --blocked-by TEAM-789  # TEAM-123 is blocked by TEAM-789
+linear issue update --blocking TEAM-456 TEAM-457 --blocked-by TEAM-788 TEAM-789  # Multiple relationships
 ```
 
 #### other issue commands

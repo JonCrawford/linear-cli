@@ -105,7 +105,10 @@ linear issue list -a   # open issue list in Linear.app
 linear issue start     # create/switch to issue branch and mark as started
 linear issue create    # create a new issue (interactive prompts)
 linear issue create -t "title" -d "description"  # create with flags
+linear issue create --blocking ENG-456  # create issue that blocks ENG-456
+linear issue create --blocked-by ENG-123  # create issue blocked by ENG-123
 linear issue update    # update an issue (interactive prompts)
+linear issue update --blocking ENG-789 --blocked-by ENG-788  # add blocking relationships
 linear issue delete    # delete an issue
 ```
 

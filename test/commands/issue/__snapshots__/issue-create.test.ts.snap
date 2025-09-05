@@ -11,22 +11,26 @@ Description:
 
 Options:
 
-  -h, --help                                - Show this help.                                              
-  --start                                   - Start the issue after creation                               
-  -a, --assignee             <assignee>     - Assign the issue to 'self' or someone (by username or name)  
-  --due-date                 <dueDate>      - Due date of the issue                                        
-  -p, --parent               <parent>       - Parent issue (if any) as a team_number code                  
-  --priority                 <priority>     - Priority of the issue (1-4, descending priority)             
-  --estimate                 <estimate>     - Points estimate of the issue                                 
-  -d, --description          <description>  - Description of the issue                                     
-  -l, --label                [label...]     - Issue label associated with the issue. May be repeated.      
-  --team                     <team>         - Team associated with the issue (if not your default team)    
-  --project                  <project>      - Name of the project with the issue                           
-  -s, --state                <state>        - Workflow state for the issue (by name or type)               
-  --no-use-default-template                 - Do not use default template for the issue                    
-  --no-color                                - Disable colored output                                       
-  --no-interactive                          - Disable interactive prompts                                  
-  -t, --title                <title>        - Title of the issue                                           
+  -h, --help                                 - Show this help.                                                                   
+  --start                                    - Start the issue after creation                                                    
+  -a, --assignee             <assignee>      - Assign the issue to 'self' or someone (by username or name)                       
+  --due-date                 <dueDate>       - Due date of the issue                                                             
+  -p, --parent               <parent>        - Parent issue (if any) as a team_number code                                       
+  --priority                 <priority>      - Priority of the issue (1-4, descending priority)                                  
+  --estimate                 <estimate>      - Points estimate of the issue                                                      
+  -d, --description          <description>   - Description of the issue                                                          
+  -l, --label                [label...]      - Issue label associated with the issue. May be repeated.                           
+  --team                     <team>          - Team associated with the issue (if not your default team)                         
+  --project                  <project>       - Name of the project with the issue                                                
+  -s, --state                <state>         - Workflow state for the issue (by name or type)                                    
+  --blocking                 [blocking...]   - Issue(s) that this issue blocks (e.g., ENG-123 or just 123 for current team).     
+                                               May be repeated.                                                                  
+  --blocked-by               [blockedBy...]  - Issue(s) that block this issue (e.g., ENG-123 or just 123 for current team). May  
+                                               be repeated.                                                                      
+  --no-use-default-template                  - Do not use default template for the issue                                         
+  --no-color                                 - Disable colored output                                                            
+  --no-interactive                           - Disable interactive prompts                                                       
+  -t, --title                <title>         - Title of the issue                                                                
 
 "
 stderr:
@@ -48,6 +52,21 @@ stdout:
 "Creating issue in ENG
 
 https://linear.app/test-team/issue/ENG-456/test-case-insensitive-labels
+"
+stderr:
+""
+`;
+
+snapshot[`Issue Create Command - With Blocking Relationships 1`] = `
+stdout:
+"Creating issue in ENG
+
+Creating issue relations...
+✗ Failed to create blocking relation with ENG-100
+✗ Failed to create blocking relation with ENG-101
+✗ Failed to create blocked-by relation with ENG-99
+Relations summary: 0 created, 3 failed, 0 skipped
+https://linear.app/test-team/issue/ENG-200/implement-authentication-refactor
 "
 stderr:
 ""

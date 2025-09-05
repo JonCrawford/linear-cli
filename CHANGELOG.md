@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- add `--blocking` and `--blocked-by` options to `issue create` and `issue update` commands for managing issue dependencies
+
 ## [1.1.1] - 2025-09-02
 
 ### Fixed
